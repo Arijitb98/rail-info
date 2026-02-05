@@ -1,0 +1,54 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Station {
+  code        String   @id
+  name        String
+  nameHindi   String?
+  latitude    Float?
+  longitude   Float?
+  trainsFrom  Train[]  @relation("SourceStation")
+  trainsTo    Train[]  @relation("DestinationStation")
+  schedules   Schedule[]
+}
+
+model Train {
+  trainNumber   String    @id
+  trainName     String
+  sourceStation Station   @relation("SourceStation", fields: [sourceStationCode], references: [code])
+  sourceStationCode String
+  destinationStation Station @relation("DestinationStation", fields: [destinationStationCode], references: [code])
+  destinationStationCode String
+  schedules      Schedule[]
+}
+
+model Schedule {
+  id           Int      @id @default(autoincrement())
+  train        Train    @relation(fields: [trainNumber], references: [trainNumber])
+  trainNumber  String
+  station      Station  @relation(fields: [stationCode], references: [code])
+  stationCode  String
+  arrivalTime  String?
+  departureTime String?
+  day          Int?
+  distance     Int?
+  stopNumber   Int?
+}
+
+model ApiCache {
+  key         String   @id
+  data        Json
+  updatedAt   DateTime @updatedAt
+}
