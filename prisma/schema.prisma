@@ -27,10 +27,10 @@ model Station {
 model Train {
   trainNumber   String    @id
   trainName     String
-  sourceStation Station   @relation("SourceStation", fields: [sourceStationCode], references: [code])
-  sourceStationCode String
-  destinationStation Station @relation("DestinationStation", fields: [destinationStationCode], references: [code])
-  destinationStationCode String
+  sourceStation Station?   @relation("SourceStation", fields: [sourceStationCode], references: [code])
+  sourceStationCode String?
+  destinationStation Station? @relation("DestinationStation", fields: [destinationStationCode], references: [code])
+  destinationStationCode String?
   schedules      Schedule[]
 }
 
