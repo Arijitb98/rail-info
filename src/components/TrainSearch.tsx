@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 type Train = {
   trainNumber: string;
@@ -13,9 +14,11 @@ type Props = {
   label: string;
   placeholder?: string;
   onSelect?: (train: Train) => void;
+  navigateOnSelect?: boolean;
 };
 
-export default function TrainSearch({ label, placeholder = 'Search trains...', onSelect }: Props) {
+export default function TrainSearch({ label, placeholder = 'Search trains...', onSelect, navigateOnSelect = false }: Props) {
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Train[]>([]);
   const [loading, setLoading] = useState(false);
@@ -64,6 +67,9 @@ export default function TrainSearch({ label, placeholder = 'Search trains...', o
     setQuery(`${train.trainNumber} - ${train.trainName}`);
     setOpen(false);
     onSelect?.(train);
+    if (navigateOnSelect) {
+      router.push(`/train/${train.trainNumber}`);
+    }
   };
 
   return (

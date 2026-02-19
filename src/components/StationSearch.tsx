@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 type Station = {
   code: string;
@@ -14,9 +15,11 @@ type Props = {
   label: string;
   placeholder?: string;
   onSelect?: (station: Station) => void;
+  navigateOnSelect?: boolean;
 };
 
-export default function StationSearch({ label, placeholder = 'Search stations...', onSelect }: Props) {
+export default function StationSearch({ label, placeholder = 'Search stations...', onSelect, navigateOnSelect = false }: Props) {
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Station[]>([]);
   const [loading, setLoading] = useState(false);
@@ -65,6 +68,9 @@ export default function StationSearch({ label, placeholder = 'Search stations...
     setQuery(`${station.code} - ${station.name}`);
     setOpen(false);
     onSelect?.(station);
+    if (navigateOnSelect) {
+      router.push(`/station/${station.code}`);
+    }
   };
 
   return (
