@@ -7,13 +7,37 @@ import Link from 'next/link';
 interface Station {
   code: string;
   name: string;
+  nameHindi?: string;
+  address?: string;
+  zone?: string;
+  latitude?: number;
+  longitude?: number;
+  city?: string;
 }
 
-interface Train {
+interface LiveTrain {
   trainNumber: string;
   trainName: string;
-  sourceStationCode: string | null;
-  destinationStationCode: string | null;
+  trainType: string;
+  sourceStationCode: string;
+  destinationStationCode: string;
+  platform?: string;
+  journeyDate: string;
+  scheduledArrival?: string;
+  scheduledDeparture?: string;
+  expectedArrival?: string;
+  expectedDeparture?: string;
+  arrivalDelay?: string;
+  departureDelay?: string;
+  isCancelled: boolean;
+  hasArrived: boolean;
+  hasDeparted: boolean;
+}
+
+interface LiveData {
+  totalTrains: number;
+  queryingForNextHours: number;
+  trains: LiveTrain[];
 }
 
 export default function StationDetailPage() {
@@ -22,7 +46,7 @@ export default function StationDetailPage() {
   const code = params.code as string;
 
   const [station, setStation] = useState<Station | null>(null);
-  const [trains, setTrains] = useState<Train[]>([]);
+  const [liveData, setLiveData] = useState<LiveData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +67,7 @@ export default function StationDetailPage() {
         }
 
         setStation(data.station);
-        setTrains(data.trains || []);
+        setLiveData(data.live);
       } catch {
         setError('Network error');
       } finally {
@@ -85,8 +109,8 @@ export default function StationDetailPage() {
     );
   }
 
-  const originatingTrains = trains.filter(t => t.sourceStationCode === station.code);
-  const terminatingTrains = trains.filter(t => t.destinationStationCode === station.code && t.sourceStationCode !== station.code);
+  const arrivingTrains = liveData?.trains.filter(t => !t.hasArrived && !t.hasDeparted) || [];
+  const departedTrains = liveData?.trains.filter(t => t.hasDeparted) || [];
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
@@ -126,108 +150,156 @@ export default function StationDetailPage() {
               </svg>
             </div>
             <div className="flex-1">
-              <div className="mb-1 inline-block rounded-lg bg-blue-100 px-3 py-1 text-sm font-bold text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
-                {station.code}
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <span className="inline-block rounded-lg bg-blue-100 px-3 py-1 text-sm font-bold text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                  {station.code}
+                </span>
+                {station.zone && (
+                  <span className="inline-block rounded-lg bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                    {station.zone} Zone
+                  </span>
+                )}
               </div>
               <h1 className="text-2xl font-bold text-zinc-900 sm:text-3xl dark:text-zinc-100">
                 {station.name}
               </h1>
+              {station.nameHindi && (
+                <p className="mt-1 text-lg text-zinc-600 dark:text-zinc-400">{station.nameHindi}</p>
+              )}
+              {station.address && (
+                <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-500">{station.address}</p>
+              )}
             </div>
           </div>
 
           {/* Quick Stats */}
-          <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <div className="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/50">
-              <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{trains.length}</div>
-              <div className="text-sm text-zinc-500 dark:text-zinc-400">Total Trains</div>
+          {liveData && (
+            <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <div className="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/50">
+                <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{liveData.totalTrains}</div>
+                <div className="text-sm text-zinc-500 dark:text-zinc-400">Trains (next {liveData.queryingForNextHours}h)</div>
+              </div>
+              <div className="rounded-xl bg-green-50 p-4 dark:bg-green-900/20">
+                <div className="text-2xl font-bold text-green-700 dark:text-green-400">{arrivingTrains.length}</div>
+                <div className="text-sm text-green-600 dark:text-green-500">Arriving</div>
+              </div>
+              <div className="rounded-xl bg-orange-50 p-4 dark:bg-orange-900/20">
+                <div className="text-2xl font-bold text-orange-700 dark:text-orange-400">{departedTrains.length}</div>
+                <div className="text-sm text-orange-600 dark:text-orange-500">Departed</div>
+              </div>
             </div>
-            <div className="rounded-xl bg-green-50 p-4 dark:bg-green-900/20">
-              <div className="text-2xl font-bold text-green-700 dark:text-green-400">{originatingTrains.length}</div>
-              <div className="text-sm text-green-600 dark:text-green-500">Originating</div>
-            </div>
-            <div className="rounded-xl bg-orange-50 p-4 dark:bg-orange-900/20">
-              <div className="text-2xl font-bold text-orange-700 dark:text-orange-400">{terminatingTrains.length}</div>
-              <div className="text-sm text-orange-600 dark:text-orange-500">Terminating</div>
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Trains List */}
-        {trains.length > 0 ? (
+        {/* Live Trains */}
+        {liveData && liveData.trains.length > 0 ? (
           <div className="space-y-6">
-            {/* Originating Trains */}
-            {originatingTrains.length > 0 && (
-              <div>
-                <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 text-sm dark:bg-green-900/40">🚀</span>
-                  Trains Originating Here
-                </h2>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {originatingTrains.map((train) => (
-                    <Link
-                      key={train.trainNumber}
-                      href={`/train/${train.trainNumber}`}
-                      className="flex items-center gap-4 rounded-xl border border-zinc-200 bg-white p-4 transition-all hover:border-green-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-green-700"
-                    >
-                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-100 text-sm font-bold text-green-700 dark:bg-green-900/40 dark:text-green-400">
-                        {train.trainNumber.slice(0, 4)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium text-zinc-900 dark:text-zinc-100">
-                          {train.trainName}
-                        </div>
-                        <div className="text-sm text-zinc-500 dark:text-zinc-400">
-                          Train #{train.trainNumber} → {train.destinationStationCode || 'N/A'}
-                        </div>
-                      </div>
-                      <svg className="h-5 w-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 text-sm dark:bg-green-900/40">🚂</span>
+              Live Train Schedule
+            </h2>
+            <div className="space-y-3">
+              {liveData.trains.map((train) => (
+                <Link
+                  key={`${train.trainNumber}-${train.journeyDate}`}
+                  href={`/train/${train.trainNumber}`}
+                  className={`flex flex-col gap-3 rounded-xl border bg-white p-4 transition-all hover:shadow-md sm:flex-row sm:items-center dark:bg-zinc-900 ${
+                    train.isCancelled
+                      ? 'border-red-300 dark:border-red-800'
+                      : train.hasDeparted
+                      ? 'border-zinc-200 opacity-60 dark:border-zinc-800'
+                      : 'border-zinc-200 hover:border-blue-300 dark:border-zinc-800 dark:hover:border-blue-700'
+                  }`}
+                >
+                  {/* Train Info */}
+                  <div className="flex items-center gap-3 sm:w-64">
+                    <div className={`flex h-12 w-16 flex-shrink-0 items-center justify-center rounded-xl text-sm font-bold ${
+                      train.isCancelled
+                        ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'
+                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+                    }`}>
+                      {train.trainNumber}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-zinc-900 dark:text-zinc-100">
+                        {train.trainName}
+                      </p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        {train.sourceStationCode} → {train.destinationStationCode}
+                      </p>
+                    </div>
+                  </div>
 
-            {/* Terminating Trains */}
-            {terminatingTrains.length > 0 && (
-              <div>
-                <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-100 text-sm dark:bg-orange-900/40">🏁</span>
-                  Trains Terminating Here
-                </h2>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {terminatingTrains.map((train) => (
-                    <Link
-                      key={train.trainNumber}
-                      href={`/train/${train.trainNumber}`}
-                      className="flex items-center gap-4 rounded-xl border border-zinc-200 bg-white p-4 transition-all hover:border-orange-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-orange-700"
-                    >
-                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-100 text-sm font-bold text-orange-700 dark:bg-orange-900/40 dark:text-orange-400">
-                        {train.trainNumber.slice(0, 4)}
+                  {/* Schedule */}
+                  <div className="flex flex-1 items-center gap-4 text-sm">
+                    {/* Arrival */}
+                    <div className="flex-1">
+                      <div className="text-xs font-medium uppercase text-zinc-400">Arr</div>
+                      <div className="font-medium text-zinc-900 dark:text-zinc-100">
+                        {train.scheduledArrival || '--:--'}
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium text-zinc-900 dark:text-zinc-100">
-                          {train.trainName}
+                      {train.expectedArrival && train.expectedArrival !== train.scheduledArrival && (
+                        <div className={`text-xs ${train.arrivalDelay?.includes('On Time') ? 'text-green-600' : 'text-orange-600'}`}>
+                          {train.expectedArrival} ({train.arrivalDelay})
                         </div>
-                        <div className="text-sm text-zinc-500 dark:text-zinc-400">
-                          {train.sourceStationCode || 'N/A'} → Train #{train.trainNumber}
-                        </div>
+                      )}
+                    </div>
+
+                    {/* Departure */}
+                    <div className="flex-1">
+                      <div className="text-xs font-medium uppercase text-zinc-400">Dep</div>
+                      <div className="font-medium text-zinc-900 dark:text-zinc-100">
+                        {train.scheduledDeparture || '--:--'}
                       </div>
-                      <svg className="h-5 w-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
+                      {train.expectedDeparture && train.expectedDeparture !== train.scheduledDeparture && (
+                        <div className={`text-xs ${train.departureDelay?.includes('On Time') ? 'text-green-600' : 'text-orange-600'}`}>
+                          {train.expectedDeparture} ({train.departureDelay})
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Platform */}
+                    <div className="w-16 text-center">
+                      <div className="text-xs font-medium uppercase text-zinc-400">PF</div>
+                      <div className="font-bold text-zinc-900 dark:text-zinc-100">
+                        {train.platform || '-'}
+                      </div>
+                    </div>
+
+                    {/* Status */}
+                    <div className="w-20 text-right">
+                      {train.isCancelled ? (
+                        <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-400">
+                          Cancelled
+                        </span>
+                      ) : train.hasDeparted ? (
+                        <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                          Departed
+                        </span>
+                      ) : train.hasArrived ? (
+                        <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700 dark:bg-green-900/40 dark:text-green-400">
+                          Arrived
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
+                          Expected
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <svg className="hidden h-5 w-5 flex-shrink-0 text-zinc-400 sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="rounded-2xl border border-zinc-200 bg-white p-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
             <div className="mb-4 text-4xl">🚂</div>
             <p className="text-zinc-600 dark:text-zinc-400">
-              No trains found originating or terminating at this station.
+              No live train data available at this time.
             </p>
           </div>
         )}

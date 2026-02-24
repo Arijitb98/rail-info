@@ -10,20 +10,33 @@ interface Station {
   name: string;
 }
 
-interface Train {
+interface StationSchedule {
+  arrival: string | null;
+  departure: string | null;
+  day: number;
+  distanceKm?: number;
+}
+
+interface TrainBetween {
   trainNumber: string;
   trainName: string;
-  sourceStationCode: string | null;
-  destinationStationCode: string | null;
+  type: string;
+  sourceStationCode: string;
+  sourceStationName: string;
+  destinationStationCode: string;
+  destinationStationName: string;
+  runningDays: string[];
+  runsAllDays: boolean;
+  travelTimeDisplay: string;
+  fromStation: StationSchedule;
+  toStation: StationSchedule;
 }
 
 interface TrainsBetweenData {
-  fromStation: Station;
-  toStation: Station;
-  directTrains: Train[];
-  reverseTrains: Train[];
-  passingTrains: Train[];
-  totalFound: number;
+  fromStationCode: string;
+  toStationCode: string;
+  totalTrains: number;
+  trains: TrainBetween[];
 }
 
 function TrainsBetweenContent() {
@@ -75,8 +88,8 @@ function TrainsBetweenContent() {
   };
 
   const handleSwap = () => {
-    if (data) {
-      router.push(`/trains-between?from=${data.toStation.code}&to=${data.fromStation.code}`);
+    if (fromCode && toCode) {
+      router.push(`/trains-between?from=${toCode}&to=${fromCode}`);
     }
   };
 
@@ -171,12 +184,11 @@ function TrainsBetweenContent() {
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
             {/* From Station */}
             <Link
-              href={`/station/${data.fromStation.code}`}
+              href={`/station/${data.fromStationCode}`}
               className="flex-1 rounded-xl border-2 border-blue-200 bg-blue-50 p-4 text-center transition-all hover:border-blue-400 dark:border-blue-900 dark:bg-blue-950/30"
             >
               <div className="mb-1 text-xs font-medium uppercase tracking-wider text-blue-600 dark:text-blue-400">From</div>
-              <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{data.fromStation.code}</div>
-              <div className="text-sm text-zinc-600 dark:text-zinc-400">{data.fromStation.name}</div>
+              <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{data.fromStationCode}</div>
             </Link>
 
             {/* Swap Button */}
@@ -191,65 +203,128 @@ function TrainsBetweenContent() {
 
             {/* To Station */}
             <Link
-              href={`/station/${data.toStation.code}`}
+              href={`/station/${data.toStationCode}`}
               className="flex-1 rounded-xl border-2 border-orange-200 bg-orange-50 p-4 text-center transition-all hover:border-orange-400 dark:border-orange-900 dark:bg-orange-950/30"
             >
               <div className="mb-1 text-xs font-medium uppercase tracking-wider text-orange-600 dark:text-orange-400">To</div>
-              <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{data.toStation.code}</div>
-              <div className="text-sm text-zinc-600 dark:text-zinc-400">{data.toStation.name}</div>
+              <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{data.toStationCode}</div>
             </Link>
           </div>
 
           <div className="mt-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
-            Found <span className="font-semibold text-zinc-900 dark:text-zinc-100">{data.totalFound}</span> train(s) on this route
+            Found <span className="font-semibold text-zinc-900 dark:text-zinc-100">{data.totalTrains}</span> train(s) on this route
           </div>
         </div>
 
         {/* Results */}
-        {data.totalFound === 0 ? (
+        {data.totalTrains === 0 ? (
           <div className="rounded-2xl border border-zinc-200 bg-white p-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
             <div className="mb-4 text-4xl">🔍</div>
             <h2 className="mb-2 text-xl font-semibold text-zinc-900 dark:text-zinc-100">
               No Direct Trains Found
             </h2>
             <p className="text-zinc-600 dark:text-zinc-400">
-              There are no direct trains between these stations in our database.
+              There are no direct trains between these stations.
             </p>
           </div>
         ) : (
-          <div className="space-y-8">
-            {/* Direct Trains */}
-            {data.directTrains.length > 0 && (
-              <TrainSection
-                title="Direct Trains"
-                subtitle={`${data.fromStation.code} → ${data.toStation.code}`}
-                trains={data.directTrains}
-                icon="🚄"
-                color="green"
-              />
-            )}
+          <div className="space-y-4">
+            {/* Trains List */}
+            <div className="mb-4 flex items-center gap-3">
+              <span className="text-2xl">🚄</span>
+              <div>
+                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Available Trains</h2>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">{data.fromStationCode} → {data.toStationCode}</p>
+              </div>
+              <span className="ml-auto rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700 dark:bg-green-900/40 dark:text-green-400">
+                {data.totalTrains} train{data.totalTrains !== 1 ? 's' : ''}
+              </span>
+            </div>
+            
+            <div className="space-y-3">
+              {data.trains.map((train) => (
+                <Link
+                  key={train.trainNumber}
+                  href={`/train/${train.trainNumber}`}
+                  className="block rounded-xl border border-zinc-200 bg-white p-4 transition-all hover:border-green-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-green-700"
+                >
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                    {/* Train Info */}
+                    <div className="flex items-center gap-4 flex-1">
+                      <div className="flex h-14 w-14 flex-shrink-0 flex-col items-center justify-center rounded-xl bg-green-100 dark:bg-green-900/40">
+                        <span className="text-xs font-bold text-green-700 dark:text-green-400">
+                          #{train.trainNumber}
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-semibold text-zinc-900 dark:text-zinc-100">
+                            {train.trainName}
+                          </span>
+                          <span className="flex-shrink-0 rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                            {train.type}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                          {train.sourceStationCode} → {train.destinationStationCode}
+                        </div>
+                      </div>
+                    </div>
 
-            {/* Reverse Trains */}
-            {data.reverseTrains.length > 0 && (
-              <TrainSection
-                title="Return Journey Trains"
-                subtitle={`${data.toStation.code} → ${data.fromStation.code}`}
-                trains={data.reverseTrains}
-                icon="🔄"
-                color="blue"
-              />
-            )}
+                    {/* Schedule Info */}
+                    <div className="flex items-center gap-6 sm:gap-8">
+                      <div className="text-center">
+                        <div className="text-xs font-medium uppercase text-zinc-400">Departs</div>
+                        <div className="font-mono text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                          {train.fromStation.departure || '--:--'}
+                        </div>
+                        {train.fromStation.day > 1 && (
+                          <div className="text-xs text-zinc-500">Day {train.fromStation.day}</div>
+                        )}
+                      </div>
 
-            {/* Passing Trains */}
-            {data.passingTrains.length > 0 && (
-              <TrainSection
-                title="Other Connecting Trains"
-                subtitle="Trains passing through these stations"
-                trains={data.passingTrains}
-                icon="🚂"
-                color="zinc"
-              />
-            )}
+                      <div className="flex flex-col items-center">
+                        <div className="text-xs font-medium text-zinc-400">{train.travelTimeDisplay}</div>
+                        <div className="my-1 h-0.5 w-12 bg-gradient-to-r from-green-400 to-orange-400"></div>
+                        <svg className="h-3 w-3 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+
+                      <div className="text-center">
+                        <div className="text-xs font-medium uppercase text-zinc-400">Arrives</div>
+                        <div className="font-mono text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                          {train.toStation.arrival || '--:--'}
+                        </div>
+                        {train.toStation.day > train.fromStation.day && (
+                          <div className="text-xs text-orange-600">Day {train.toStation.day}</div>
+                        )}
+                      </div>
+
+                      <svg className="hidden h-5 w-5 flex-shrink-0 text-zinc-400 sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Running Days */}
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">Runs on:</span>
+                    {train.runsAllDays ? (
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/40 dark:text-green-400">
+                        Daily
+                      </span>
+                    ) : (
+                      train.runningDays.map((day) => (
+                        <span key={day} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                          {day.slice(0, 3)}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
           </div>
         )}
 
@@ -266,77 +341,6 @@ function TrainsBetweenContent() {
           </Link>
         </div>
       </main>
-    </div>
-  );
-}
-
-function TrainSection({
-  title,
-  subtitle,
-  trains,
-  icon,
-  color,
-}: {
-  title: string;
-  subtitle: string;
-  trains: Train[];
-  icon: string;
-  color: 'green' | 'blue' | 'zinc';
-}) {
-  const colorClasses = {
-    green: {
-      bg: 'bg-green-100 dark:bg-green-900/40',
-      text: 'text-green-700 dark:text-green-400',
-      border: 'hover:border-green-300 dark:hover:border-green-700',
-    },
-    blue: {
-      bg: 'bg-blue-100 dark:bg-blue-900/40',
-      text: 'text-blue-700 dark:text-blue-400',
-      border: 'hover:border-blue-300 dark:hover:border-blue-700',
-    },
-    zinc: {
-      bg: 'bg-zinc-100 dark:bg-zinc-800',
-      text: 'text-zinc-700 dark:text-zinc-400',
-      border: 'hover:border-zinc-400 dark:hover:border-zinc-600',
-    },
-  };
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center gap-3">
-        <span className="text-2xl">{icon}</span>
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{title}</h2>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">{subtitle}</p>
-        </div>
-        <span className={`ml-auto rounded-full ${colorClasses[color].bg} px-3 py-1 text-sm font-medium ${colorClasses[color].text}`}>
-          {trains.length} train{trains.length !== 1 ? 's' : ''}
-        </span>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {trains.map((train) => (
-          <Link
-            key={train.trainNumber}
-            href={`/train/${train.trainNumber}`}
-            className={`flex items-center gap-4 rounded-xl border border-zinc-200 bg-white p-4 transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 ${colorClasses[color].border}`}
-          >
-            <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${colorClasses[color].bg} text-sm font-bold ${colorClasses[color].text}`}>
-              {train.trainNumber.slice(0, 4)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-medium text-zinc-900 dark:text-zinc-100">
-                {train.trainName}
-              </div>
-              <div className="text-sm text-zinc-500 dark:text-zinc-400">
-                #{train.trainNumber} • {train.sourceStationCode || '?'} → {train.destinationStationCode || '?'}
-              </div>
-            </div>
-            <svg className="h-5 w-5 flex-shrink-0 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </Link>
-        ))}
-      </div>
     </div>
   );
 }

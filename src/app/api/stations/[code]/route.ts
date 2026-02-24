@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getStationInfo, getStationLive } from '@/lib/railradar';
 
 export async function GET(
   request: NextRequest,
@@ -12,32 +12,49 @@ export async function GET(
   }
 
   try {
-    const station = await prisma.station.findUnique({
-      where: { code: code.toUpperCase() },
-    });
-
-    if (!station) {
-      return NextResponse.json({ error: 'Station not found' }, { status: 404 });
-    }
-
-    // Get trains that originate or terminate at this station
-    const trains = await prisma.train.findMany({
-      where: {
-        OR: [
-          { sourceStationCode: code.toUpperCase() },
-          { destinationStationCode: code.toUpperCase() },
-        ],
-      },
-      take: 50,
-      orderBy: { trainNumber: 'asc' },
-    });
+    // Fetch station info and live data in parallel
+    const [stationInfo, stationLive] = await Promise.all([
+      getStationInfo(code),
+      getStationLive(code, 8).catch(() => null), // Live data is optional
+    ]);
 
     return NextResponse.json({
-      station,
-      trains,
+      station: {
+        code: stationInfo.code,
+        name: stationInfo.name,
+        nameHindi: stationInfo.hindi_name,
+        address: stationInfo.address,
+        zone: stationInfo.zone,
+        latitude: stationInfo.lat,
+        longitude: stationInfo.lng,
+        city: stationInfo.city,
+      },
+      live: stationLive ? {
+        totalTrains: stationLive.totalTrains,
+        queryingForNextHours: stationLive.queryingForNextHours,
+        trains: stationLive.trains.map((t) => ({
+          trainNumber: t.train.number,
+          trainName: t.train.name,
+          trainType: t.train.type,
+          sourceStationCode: t.train.sourceStationCode,
+          destinationStationCode: t.train.destinationStationCode,
+          platform: t.platform,
+          journeyDate: t.journeyDate,
+          scheduledArrival: t.schedule.arrival,
+          scheduledDeparture: t.schedule.departure,
+          expectedArrival: t.live.expectedArrival,
+          expectedDeparture: t.live.expectedDeparture,
+          arrivalDelay: t.live.arrivalDelayDisplay,
+          departureDelay: t.live.departureDelayDisplay,
+          isCancelled: t.status.isCancelled,
+          hasArrived: t.status.hasArrived,
+          hasDeparted: t.status.hasDeparted,
+        })),
+      } : null,
     });
   } catch (error) {
     console.error('Station detail error:', error);
-    return NextResponse.json({ error: 'Failed to fetch station' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to fetch station';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

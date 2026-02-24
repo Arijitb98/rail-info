@@ -1,5 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getTrainsBetween } from '@/lib/railradar';
+
+// Helper to convert minutes from midnight to HH:MM format
+function minutesToTime(minutes: number): string {
+  const hours = Math.floor(minutes / 60) % 24;
+  const mins = minutes % 60;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+}
+
+// Helper to convert minutes to hours and minutes display
+function formatDuration(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours === 0) return `${mins}m`;
+  if (mins === 0) return `${hours}h`;
+  return `${hours}h ${mins}m`;
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -14,66 +30,53 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Verify both stations exist
-    const [fromStation, toStation] = await Promise.all([
-      prisma.station.findUnique({ where: { code: from } }),
-      prisma.station.findUnique({ where: { code: to } }),
-    ]);
-
-    if (!fromStation) {
-      return NextResponse.json({ error: `Station ${from} not found` }, { status: 404 });
-    }
-    if (!toStation) {
-      return NextResponse.json({ error: `Station ${to} not found` }, { status: 404 });
-    }
-
-    // Find trains that have source as 'from' and destination as 'to'
-    // This is a simplified approach - in reality we'd need schedule data
-    const directTrains = await prisma.train.findMany({
-      where: {
-        sourceStationCode: from,
-        destinationStationCode: to,
-      },
-      orderBy: { trainNumber: 'asc' },
-    });
-
-    // Also find trains going the other direction for return journeys
-    const reverseTrains = await prisma.train.findMany({
-      where: {
-        sourceStationCode: to,
-        destinationStationCode: from,
-      },
-      orderBy: { trainNumber: 'asc' },
-    });
-
-    // Find trains that pass through both stations (simplified - checking if either endpoint matches)
-    const passingTrains = await prisma.train.findMany({
-      where: {
-        OR: [
-          { sourceStationCode: from },
-          { sourceStationCode: to },
-          { destinationStationCode: from },
-          { destinationStationCode: to },
-        ],
-        NOT: [
-          { AND: [{ sourceStationCode: from }, { destinationStationCode: to }] },
-          { AND: [{ sourceStationCode: to }, { destinationStationCode: from }] },
-        ],
-      },
-      take: 20,
-      orderBy: { trainNumber: 'asc' },
-    });
+    const data = await getTrainsBetween(from, to);
 
     return NextResponse.json({
-      fromStation,
-      toStation,
-      directTrains,
-      reverseTrains,
-      passingTrains,
-      totalFound: directTrains.length + reverseTrains.length + passingTrains.length,
+      fromStationCode: data.fromStationCode,
+      toStationCode: data.toStationCode,
+      totalTrains: data.totalTrains,
+      trains: data.trains.map((train) => ({
+        trainNumber: train.trainNumber,
+        trainName: train.trainName,
+        hindiName: train.hindiName,
+        type: train.type,
+        sourceStationCode: train.sourceStationCode,
+        sourceStationName: train.sourceStationName,
+        destinationStationCode: train.destinationStationCode,
+        destinationStationName: train.destinationStationName,
+        runningDays: train.runningDays.days,
+        runsAllDays: train.runningDays.allDays,
+        isStartingToday: train.runningDays.isStartingToday,
+        travelTimeMinutes: train.travelTimeMinutes,
+        travelTimeDisplay: formatDuration(train.travelTimeMinutes),
+        totalHalts: train.totalHalts,
+        distanceKm: train.distanceKm,
+        avgSpeedKmph: train.avgSpeedKmph,
+        fromStation: {
+          arrival: train.fromStationSchedule.arrivalMinutes 
+            ? minutesToTime(train.fromStationSchedule.arrivalMinutes) 
+            : null,
+          departure: train.fromStationSchedule.departureMinutes 
+            ? minutesToTime(train.fromStationSchedule.departureMinutes) 
+            : null,
+          day: train.fromStationSchedule.day,
+        },
+        toStation: {
+          arrival: train.toStationSchedule.arrivalMinutes 
+            ? minutesToTime(train.toStationSchedule.arrivalMinutes) 
+            : null,
+          departure: train.toStationSchedule.departureMinutes 
+            ? minutesToTime(train.toStationSchedule.departureMinutes) 
+            : null,
+          day: train.toStationSchedule.day,
+          distanceKm: train.toStationSchedule.distanceFromSourceKm,
+        },
+      })),
     });
   } catch (error) {
     console.error('Trains between error:', error);
-    return NextResponse.json({ error: 'Failed to search trains' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to search trains';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

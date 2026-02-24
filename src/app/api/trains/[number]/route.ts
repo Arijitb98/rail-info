@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getTrainData } from '@/lib/railradar';
 
 export async function GET(
   request: NextRequest,
@@ -12,37 +12,67 @@ export async function GET(
   }
 
   try {
-    const train = await prisma.train.findUnique({
-      where: { trainNumber: number },
-    });
+    const trainData = await getTrainData(number);
 
-    if (!train) {
-      return NextResponse.json({ error: 'Train not found' }, { status: 404 });
-    }
-
-    // Get source and destination station details
-    let sourceStation = null;
-    let destStation = null;
-
-    if (train.sourceStationCode) {
-      sourceStation = await prisma.station.findUnique({
-        where: { code: train.sourceStationCode },
-      });
-    }
-
-    if (train.destinationStationCode) {
-      destStation = await prisma.station.findUnique({
-        where: { code: train.destinationStationCode },
-      });
-    }
+    // Filter schedule to only include halts (major stops)
+    const majorStops = trainData.schedule.filter((s) => s.isHalt === 1);
 
     return NextResponse.json({
-      train,
-      sourceStation,
-      destStation,
+      train: {
+        trainNumber: trainData.trainNumber,
+        trainName: trainData.trainName,
+        hindiName: trainData.hindiName,
+        type: trainData.type,
+        sourceStationCode: trainData.sourceStationCode,
+        sourceStationName: trainData.sourceStationName,
+        destinationStationCode: trainData.destinationStationCode,
+        destinationStationName: trainData.destinationStationName,
+        runningDays: trainData.runningDays.days,
+        runsAllDays: trainData.runningDays.allDays,
+        returnTrainNumber: trainData.returnTrainNumber,
+        travelTimeMinutes: trainData.travelTimeMinutes,
+        totalHalts: trainData.totalHalts,
+        distanceKm: trainData.distanceKm,
+        avgSpeedKmph: trainData.avgSpeedKmph,
+      },
+      schedule: majorStops.map((stop) => ({
+        stationCode: stop.stationCode,
+        stationName: stop.stationName,
+        arrivalMinutes: stop.scheduledArrival,
+        departureMinutes: stop.scheduledDeparture,
+        haltMinutes: stop.haltDurationMinutes,
+        day: stop.day,
+        distanceKm: stop.distanceFromSourceKm,
+      })),
+      fullSchedule: trainData.schedule.map((stop) => ({
+        stationCode: stop.stationCode,
+        stationName: stop.stationName,
+        isHalt: stop.isHalt === 1,
+        arrivalMinutes: stop.scheduledArrival,
+        departureMinutes: stop.scheduledDeparture,
+        day: stop.day,
+        distanceKm: stop.distanceFromSourceKm,
+      })),
+      metadata: {
+        canRefreshLive: trainData.metadata.canRefreshLive,
+        hasLiveData: trainData.metadata.hasLiveData,
+        lastLiveUpdate: trainData.metadata.lastLiveUpdate,
+      },
+      liveData: trainData.liveData ? {
+        journeyDate: trainData.liveData.journeyDate,
+        lastUpdatedAt: trainData.liveData.lastUpdatedAt,
+        currentLocation: trainData.liveData.currentLocation,
+        route: trainData.liveData.route.map((r) => ({
+          stationCode: r.stationCode,
+          platform: r.platform,
+          delayArrivalMinutes: r.delayArrivalMinutes,
+          delayDepartureMinutes: r.delayDepartureMinutes,
+        })),
+      } : null,
     });
   } catch (error) {
     console.error('Train detail error:', error);
-    return NextResponse.json({ error: 'Failed to fetch train' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to fetch train';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
