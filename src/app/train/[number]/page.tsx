@@ -25,11 +25,22 @@ interface Train {
 interface ScheduleStop {
   stationCode: string;
   stationName: string;
-  arrivalMinutes: number;
-  departureMinutes: number;
-  haltMinutes: number;
+  arrivalMinutes?: number;
+  departureMinutes?: number;
+  haltMinutes?: number;
   day: number;
-  distanceKm: number;
+  distanceKm?: number;
+  isHalt?: boolean;
+}
+
+interface FullScheduleStop {
+  stationCode: string;
+  stationName: string;
+  arrivalMinutes?: number;
+  departureMinutes?: number;
+  day: number;
+  distanceKm?: number;
+  isHalt: boolean;
 }
 
 interface LiveData {
@@ -79,10 +90,12 @@ export default function TrainDetailPage() {
 
   const [train, setTrain] = useState<Train | null>(null);
   const [schedule, setSchedule] = useState<ScheduleStop[]>([]);
+  const [fullSchedule, setFullSchedule] = useState<FullScheduleStop[]>([]);
   const [liveData, setLiveData] = useState<LiveData | null>(null);
   const [metadata, setMetadata] = useState<Metadata | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedStops, setExpandedStops] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     if (!trainNumber) return;
@@ -102,6 +115,7 @@ export default function TrainDetailPage() {
 
         setTrain(data.train);
         setSchedule(data.schedule || []);
+        setFullSchedule(data.fullSchedule || []);
         setLiveData(data.liveData);
         setMetadata(data.metadata);
       } catch {
@@ -149,6 +163,57 @@ export default function TrainDetailPage() {
   const getLiveInfo = (stationCode: string) => {
     if (!liveData?.route) return null;
     return liveData.route.find(r => r.stationCode === stationCode);
+  };
+
+  // Determine if a station has been passed based on live data
+  const getStationStatus = (stop: ScheduleStop, index: number): 'passed' | 'current' | 'upcoming' => {
+    if (!liveData?.currentLocation) return 'upcoming';
+    
+    const currentStationCode = liveData.currentLocation.stationCode;
+    const status = liveData.currentLocation.status;
+    const currentDistanceKm = liveData.currentLocation.distanceFromOriginKm;
+    
+    // Find current station index in schedule
+    const currentStationIndex = schedule.findIndex(s => s.stationCode === currentStationCode);
+    
+    if (status === 'AT_STATION') {
+      // If train is at a station
+      if (stop.stationCode === currentStationCode) return 'current';
+      if (currentStationIndex >= 0 && index < currentStationIndex) return 'passed';
+      if (currentStationIndex >= 0 && index > currentStationIndex) return 'upcoming';
+      // Fallback to distance comparison if station not in schedule
+      if (stop.distanceKm !== undefined && stop.distanceKm < currentDistanceKm) return 'passed';
+    } else if (status === 'DEPARTED') {
+      // If train has departed, use distance comparison
+      if (stop.distanceKm !== undefined && stop.distanceKm <= currentDistanceKm) return 'passed';
+    }
+    
+    return 'upcoming';
+  };
+
+  // Get intermediate stations between two halt stations from fullSchedule
+  const getIntermediateStations = (currentStopCode: string, nextStopCode: string): FullScheduleStop[] => {
+    if (!fullSchedule.length) return [];
+    
+    const currentIdx = fullSchedule.findIndex(s => s.stationCode === currentStopCode);
+    const nextIdx = fullSchedule.findIndex(s => s.stationCode === nextStopCode);
+    
+    if (currentIdx === -1 || nextIdx === -1 || nextIdx <= currentIdx + 1) return [];
+    
+    return fullSchedule.slice(currentIdx + 1, nextIdx).filter(s => !s.isHalt);
+  };
+
+  // Toggle expanded state for a stop
+  const toggleExpanded = (index: number) => {
+    setExpandedStops(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
   };
 
   return (
@@ -205,7 +270,7 @@ export default function TrainDetailPage() {
               <h1 className="text-2xl font-bold text-zinc-900 sm:text-3xl dark:text-zinc-100">
                 {train.trainName}
               </h1>
-              {train.hindiName && (
+              {train.hindiName && train.hindiName !== 'null' && (
                 <p className="mt-1 text-lg text-zinc-600 dark:text-zinc-400">{train.hindiName}</p>
               )}
             </div>
@@ -218,14 +283,26 @@ export default function TrainDetailPage() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-200 dark:bg-green-800">
                   <span className="text-lg">📍</span>
                 </div>
-                <div>
+                <div className="flex-1">
                   <p className="font-medium text-green-800 dark:text-green-200">
-                    Currently at <span className="font-bold">{liveData?.currentLocation?.stationCode}</span>
+                    {liveData?.currentLocation?.status === 'AT_STATION' ? 'Currently at' : 'Departed from'}{' '}
+                    <span className="font-bold">{liveData?.currentLocation?.stationCode}</span>
                   </p>
                   <p className="text-sm text-green-600 dark:text-green-400">
-                    {liveData?.currentLocation?.status?.replace('_', ' ')} • {liveData?.currentLocation?.distanceFromOriginKm} km from origin
+                    {Math.round(liveData?.currentLocation?.distanceFromOriginKm ?? 0)} km from origin
+                    {liveData?.lastUpdatedAt && (
+                      <> • Updated {new Date(liveData.lastUpdatedAt).toLocaleTimeString()}</>
+                    )}
                   </p>
                 </div>
+                {liveData?.journeyDate && (
+                  <div className="text-right text-sm">
+                    <div className="text-green-700 dark:text-green-300">Journey</div>
+                    <div className="font-medium text-green-800 dark:text-green-200">
+                      {new Date(liveData.journeyDate).toLocaleDateString()}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -333,58 +410,159 @@ export default function TrainDetailPage() {
                 const liveInfo = getLiveInfo(stop.stationCode);
                 const isFirst = index === 0;
                 const isLast = index === schedule.length - 1;
-                
+                const stationStatus = getStationStatus(stop, index);
+                const isLive = stationStatus === 'current';
+                const isPassed = stationStatus === 'passed';
+                const nextStop = schedule[index + 1];
+                const intermediateStations = nextStop ? getIntermediateStations(stop.stationCode, nextStop.stationCode) : [];
+                const isExpanded = expandedStops.has(index);
+
                 return (
-                  <div key={`${stop.stationCode}-${index}`} className="relative flex items-stretch gap-4">
-                    {/* Timeline */}
-                    <div className="flex flex-col items-center">
-                      <div className={`h-4 w-0.5 ${isFirst ? 'bg-transparent' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
-                      <div className={`h-4 w-4 rounded-full border-2 ${
-                        isFirst ? 'border-green-500 bg-green-500' :
-                        isLast ? 'border-orange-500 bg-orange-500' :
-                        'border-zinc-400 bg-white dark:border-zinc-600 dark:bg-zinc-800'
-                      }`} />
-                      <div className={`flex-1 w-0.5 ${isLast ? 'bg-transparent' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
+                  <div key={`${stop.stationCode}-${index}`}>
+                    <div className="relative flex items-stretch gap-4">
+                      {/* Timeline */}
+                      <div className="flex flex-col items-center">
+                        <div className={`h-4 w-0.5 ${isFirst ? 'bg-transparent' : isPassed || isLive ? 'bg-green-400 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
+                        <div className={`h-4 w-4 rounded-full border-2 ${
+                          isLive ? 'border-green-500 bg-green-500 animate-pulse ring-4 ring-green-300 dark:ring-green-700' :
+                          isPassed ? 'border-green-500 bg-green-500' :
+                          isFirst ? 'border-green-500 bg-green-500' :
+                          isLast ? 'border-orange-500 bg-orange-500' :
+                          'border-zinc-400 bg-white dark:border-zinc-600 dark:bg-zinc-800'
+                        }`} />
+                        <div className={`flex-1 w-0.5 ${isLast ? 'bg-transparent' : isPassed ? 'bg-green-400 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
+                      </div>
+
+                      {/* Stop Info */}
+                      <div className={`flex flex-1 items-center gap-4 rounded-lg p-3 transition-colors ${isLive ? 'bg-green-50 dark:bg-green-900/20' : isPassed ? 'opacity-60' : ''}`}>
+                        <Link
+                          href={`/station/${stop.stationCode}`}
+                          className="flex flex-1 items-center gap-4 hover:opacity-80"
+                        >
+                          <div className="w-16 flex-shrink-0 text-center">
+                            <div className="text-xs font-medium text-zinc-400">Day {stop.day}</div>
+                            <div className="font-mono text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                              {minutesToTime(stop.arrivalMinutes ?? stop.departureMinutes ?? 0)}
+                            </div>
+                            {liveInfo?.delayArrivalMinutes !== undefined && liveInfo.delayArrivalMinutes !== 0 && (
+                              <div className={`text-xs ${liveInfo.delayArrivalMinutes > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {liveInfo.delayArrivalMinutes > 0 ? '+' : ''}{liveInfo.delayArrivalMinutes}m → {minutesToTime((stop.arrivalMinutes ?? stop.departureMinutes ?? 0) + liveInfo.delayArrivalMinutes)}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`font-medium ${isPassed ? 'text-zinc-500 dark:text-zinc-500' : 'text-zinc-900 dark:text-zinc-100'}`}>{stop.stationName}</span>
+                              <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                                {stop.stationCode}
+                              </span>
+                              {isLive && (
+                                <span className="inline-flex items-center gap-1 rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/50 dark:text-green-300">
+                                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500"></span>
+                                  {liveData?.currentLocation?.status === 'AT_STATION' ? 'At Station' : 'Departed'}
+                                </span>
+                              )}
+                              {isPassed && (
+                                <span className="inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                                  ✓ Passed
+                                </span>
+                              )}
+                              {liveInfo?.platform && (
+                                <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
+                                  PF {liveInfo.platform}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                              {stop.distanceKm !== undefined ? `${stop.distanceKm} km` : '0 km'} 
+                              {stop.haltMinutes !== undefined && stop.haltMinutes > 0 ? ` • ${stop.haltMinutes}m halt` : ''}
+                            </div>
+                          </div>
+                        </Link>
+
+                        <Link href={`/station/${stop.stationCode}`}>
+                          <svg className="h-5 w-5 flex-shrink-0 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </Link>
+                      </div>
                     </div>
 
-                    {/* Stop Info */}
-                    <Link
-                      href={`/station/${stop.stationCode}`}
-                      className="flex flex-1 items-center gap-4 rounded-lg p-3 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                    >
-                      <div className="w-16 flex-shrink-0 text-center">
-                        <div className="text-xs font-medium text-zinc-400">Day {stop.day}</div>
-                        <div className="font-mono text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                          {minutesToTime(stop.arrivalMinutes)}
+                    {/* Intermediate Stations Toggle - Between main stops */}
+                    {intermediateStations.length > 0 && (
+                      <div className="relative flex items-stretch gap-4">
+                        {/* Timeline connector */}
+                        <div className="flex flex-col items-center">
+                          <div className={`flex-1 w-0.5 ${isPassed ? 'bg-green-400 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
+                          <button
+                            onClick={() => toggleExpanded(index)}
+                            className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                              isExpanded 
+                                ? 'border-blue-500 bg-blue-500 text-white' 
+                                : 'border-zinc-300 bg-white text-zinc-500 hover:border-blue-400 hover:bg-blue-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-blue-500 dark:hover:bg-blue-900/30'
+                            }`}
+                          >
+                            <svg className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          <div className={`flex-1 w-0.5 ${isPassed ? 'bg-green-400 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
                         </div>
-                        {liveInfo?.delayArrivalMinutes !== undefined && liveInfo.delayArrivalMinutes !== 0 && (
-                          <div className={`text-xs ${liveInfo.delayArrivalMinutes > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                            {liveInfo.delayArrivalMinutes > 0 ? '+' : ''}{liveInfo.delayArrivalMinutes}m
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-zinc-900 dark:text-zinc-100">{stop.stationName}</span>
-                          <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                            {stop.stationCode}
-                          </span>
-                          {liveInfo?.platform && (
-                            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
-                              PF {liveInfo.platform}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                          {stop.distanceKm} km • {stop.haltMinutes > 0 ? `${stop.haltMinutes}m halt` : 'No halt'}
-                        </div>
-                      </div>
 
-                      <svg className="h-5 w-5 flex-shrink-0 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </Link>
+                        {/* Label */}
+                        <button
+                          onClick={() => toggleExpanded(index)}
+                          className="flex items-center gap-2 py-1 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
+                        >
+                          <span className="rounded-full bg-zinc-100 px-2 py-0.5 dark:bg-zinc-800">
+                            {intermediateStations.length} intermediate station{intermediateStations.length > 1 ? 's' : ''}
+                          </span>
+                          <span>{isExpanded ? 'Hide' : 'Show'}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Intermediate Stations (Expanded) */}
+                    {isExpanded && intermediateStations.length > 0 && (
+                      <div className="relative">
+                        {intermediateStations.map((intStop, intIdx) => {
+                          const intStopDistance = intStop.distanceKm ?? 0;
+                          const currentDistance = liveData?.currentLocation?.distanceFromOriginKm ?? 0;
+                          const isIntPassed = intStopDistance <= currentDistance;
+                          
+                          return (
+                            <div key={`int-${intStop.stationCode}-${intIdx}`} className="relative flex items-stretch gap-4">
+                              {/* Timeline */}
+                              <div className="flex flex-col items-center">
+                                <div className={`flex-1 w-0.5 ${isIntPassed || isPassed ? 'bg-green-400 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
+                                <div className={`h-2 w-2 flex-shrink-0 rounded-full ${isIntPassed || isPassed ? 'bg-green-300 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
+                                <div className={`flex-1 w-0.5 ${isIntPassed || isPassed ? 'bg-green-400 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
+                              </div>
+
+                              {/* Station Info */}
+                              <div className={`flex flex-1 items-center gap-4 py-1 ${isIntPassed ? 'opacity-50' : ''}`}>
+                                <div className="w-16 flex-shrink-0 text-center">
+                                  <div className="font-mono text-xs text-zinc-400">
+                                    {minutesToTime(intStop.arrivalMinutes ?? intStop.departureMinutes ?? 0)}
+                                  </div>
+                                </div>
+                                <div className="flex flex-1 items-center gap-2">
+                                  <span className="text-sm text-zinc-500 dark:text-zinc-400">{intStop.stationName}</span>
+                                  <span className="rounded bg-zinc-50 px-1 py-0.5 text-xs text-zinc-400 dark:bg-zinc-800/50">
+                                    {intStop.stationCode}
+                                  </span>
+                                  {isIntPassed && (
+                                    <span className="text-xs text-zinc-400">✓</span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-zinc-400">{intStop.distanceKm ?? 0} km</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
