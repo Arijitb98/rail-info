@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useMemo, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import StationSearch from '@/components/StationSearch';
+import SiteHeader from '@/components/SiteHeader';
 
 interface Station {
   code: string;
@@ -39,6 +40,41 @@ interface TrainsBetweenData {
   trains: TrainBetween[];
 }
 
+type SortOption = 'default' | 'shortest-duration' | 'earliest-departure' | 'latest-departure';
+
+function parseTimeToMinutes(time: string | null): number | null {
+  if (!time) return null;
+  const [hoursStr, minutesStr] = time.split(':');
+  const hours = Number(hoursStr);
+  const minutes = Number(minutesStr);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+  return hours * 60 + minutes;
+}
+
+function getStationAbsoluteMinutes(station: StationSchedule, mode: 'departure' | 'arrival'): number | null {
+  const preferredTime = mode === 'departure' ? station.departure : station.arrival;
+  const fallbackTime = mode === 'departure' ? station.arrival : station.departure;
+  const minutes = parseTimeToMinutes(preferredTime ?? fallbackTime);
+  if (minutes === null) return null;
+  const dayOffset = (station.day - 1) * 24 * 60;
+  return dayOffset + minutes;
+}
+
+function getTravelDurationMinutes(fromStation: StationSchedule, toStation: StationSchedule): number | null {
+  const start = getStationAbsoluteMinutes(fromStation, 'departure');
+  const end = getStationAbsoluteMinutes(toStation, 'arrival');
+  if (start === null || end === null || end < start) return null;
+  return end - start;
+}
+
+function formatDuration(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours === 0) return `${mins}m`;
+  if (mins === 0) return `${hours}h`;
+  return `${hours}h ${mins}m`;
+}
+
 function TrainsBetweenContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -53,6 +89,7 @@ function TrainsBetweenContent() {
   // For new search
   const [fromStation, setFromStation] = useState<Station | null>(null);
   const [toStation, setToStation] = useState<Station | null>(null);
+  const [sortOption, setSortOption] = useState<SortOption>('default');
 
   useEffect(() => {
     if (!fromCode || !toCode) return;
@@ -93,11 +130,55 @@ function TrainsBetweenContent() {
     }
   };
 
+  const trainsWithMetrics = useMemo(() => {
+    if (!data) return [];
+    return data.trains.map((train) => {
+      const legDurationMinutes = getTravelDurationMinutes(train.fromStation, train.toStation);
+      const departureAbsMinutes = getStationAbsoluteMinutes(train.fromStation, 'departure');
+      const arrivalAbsMinutes = getStationAbsoluteMinutes(train.toStation, 'arrival');
+      const displayDuration = legDurationMinutes !== null ? formatDuration(legDurationMinutes) : train.travelTimeDisplay;
+      const fromDayRaw = train.fromStation.day ?? 1;
+      const toDayRaw = train.toStation.day ?? fromDayRaw;
+      const relativeFromDay = 1;
+      const relativeToDay = Math.max(1, relativeFromDay + Math.max(0, toDayRaw - fromDayRaw));
+      return {
+        train,
+        legDurationMinutes,
+        departureAbsMinutes,
+        arrivalAbsMinutes,
+        displayDuration,
+        relativeFromDay,
+        relativeToDay,
+      };
+    });
+  }, [data]);
+
+  const sortedTrains = useMemo(() => {
+    if (sortOption === 'default') return trainsWithMetrics;
+    const list = [...trainsWithMetrics];
+
+    switch (sortOption) {
+      case 'shortest-duration':
+        list.sort((a, b) => (a.legDurationMinutes ?? Infinity) - (b.legDurationMinutes ?? Infinity));
+        break;
+      case 'earliest-departure':
+        list.sort((a, b) => (a.departureAbsMinutes ?? Infinity) - (b.departureAbsMinutes ?? Infinity));
+        break;
+      case 'latest-departure':
+        list.sort((a, b) => (b.departureAbsMinutes ?? -Infinity) - (a.departureAbsMinutes ?? -Infinity));
+        break;
+      default:
+        break;
+    }
+
+    return list;
+  }, [sortOption, trainsWithMetrics]);
+
   // Show search form if no params
   if (!fromCode || !toCode) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
-        <Header />
+        <SiteHeader />
         <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
           <div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
             <div className="mb-6 text-center">
@@ -153,7 +234,7 @@ function TrainsBetweenContent() {
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
-        <Header />
+        <SiteHeader />
         <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
           <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center dark:border-red-900 dark:bg-red-950/50">
             <div className="mb-4 text-4xl">🚫</div>
@@ -177,7 +258,7 @@ function TrainsBetweenContent() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
-      <Header />
+      <SiteHeader />
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
         {/* Route Header */}
         <div className="mb-8 rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
@@ -230,19 +311,35 @@ function TrainsBetweenContent() {
         ) : (
           <div className="space-y-4">
             {/* Trains List */}
-            <div className="mb-4 flex items-center gap-3">
+            <div className="mb-4 flex flex-wrap items-center gap-3">
               <span className="text-2xl">🚄</span>
               <div>
                 <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Available Trains</h2>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">{data.fromStationCode} → {data.toStationCode}</p>
               </div>
-              <span className="ml-auto rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700 dark:bg-green-900/40 dark:text-green-400">
-                {data.totalTrains} train{data.totalTrains !== 1 ? 's' : ''}
-              </span>
+              <div className="ml-auto flex flex-wrap items-center gap-3">
+                <label className="text-sm font-medium text-zinc-500 dark:text-zinc-400" htmlFor="trains-sort-select">
+                  Sort
+                </label>
+                <select
+                  id="trains-sort-select"
+                  value={sortOption}
+                  onChange={(event) => setSortOption(event.target.value as SortOption)}
+                  className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
+                >
+                  <option value="default">Default</option>
+                  <option value="shortest-duration">Shortest travel time</option>
+                  <option value="earliest-departure">Earliest departure</option>
+                  <option value="latest-departure">Latest departure</option>
+                </select>
+                <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700 dark:bg-green-900/40 dark:text-green-400">
+                  {data.totalTrains} train{data.totalTrains !== 1 ? 's' : ''}
+                </span>
+              </div>
             </div>
             
             <div className="space-y-3">
-              {data.trains.map((train) => (
+              {sortedTrains.map(({ train, displayDuration, relativeFromDay, relativeToDay }) => (
                 <Link
                   key={train.trainNumber}
                   href={`/train/${train.trainNumber}`}
@@ -278,13 +375,13 @@ function TrainsBetweenContent() {
                         <div className="font-mono text-lg font-bold text-zinc-900 dark:text-zinc-100">
                           {train.fromStation.departure || '--:--'}
                         </div>
-                        {train.fromStation.day > 1 && (
-                          <div className="text-xs text-zinc-500">Day {train.fromStation.day}</div>
+                        {relativeFromDay > 1 && (
+                          <div className="text-xs text-zinc-500">Day {relativeFromDay}</div>
                         )}
                       </div>
 
                       <div className="flex flex-col items-center">
-                        <div className="text-xs font-medium text-zinc-400">{train.travelTimeDisplay}</div>
+                        <div className="text-xs font-medium text-zinc-400">{displayDuration}</div>
                         <div className="my-1 h-0.5 w-12 bg-gradient-to-r from-green-400 to-orange-400"></div>
                         <svg className="h-3 w-3 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -296,8 +393,8 @@ function TrainsBetweenContent() {
                         <div className="font-mono text-lg font-bold text-zinc-900 dark:text-zinc-100">
                           {train.toStation.arrival || '--:--'}
                         </div>
-                        {train.toStation.day > train.fromStation.day && (
-                          <div className="text-xs text-orange-600">Day {train.toStation.day}</div>
+                        {relativeToDay > 1 && (
+                          <div className="text-xs text-orange-600">Day {relativeToDay}</div>
                         )}
                       </div>
 
@@ -342,34 +439,6 @@ function TrainsBetweenContent() {
         </div>
       </main>
     </div>
-  );
-}
-
-function Header() {
-  return (
-    <header className="border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
-      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/25">
-            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-            </svg>
-          </div>
-          <span className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
-            Rail<span className="text-blue-600">Info</span>
-          </span>
-        </Link>
-        <Link
-          href="/"
-          className="flex items-center gap-2 text-sm font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-        >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-          </svg>
-          Home
-        </Link>
-      </div>
-    </header>
   );
 }
 

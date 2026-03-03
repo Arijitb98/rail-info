@@ -6,13 +6,31 @@ export async function GET(
   { params }: { params: Promise<{ number: string }> }
 ) {
   const { number } = await params;
+  const searchParams = request.nextUrl.searchParams;
+  const journeyDate = searchParams.get('journeyDate') || undefined;
+  const dataProviderParam = searchParams.get('dataProvider');
+  const dataTypeParam = searchParams.get('dataType');
+
+  const dataProvider = dataProviderParam === 'NTES'
+    ? 'NTES'
+    : dataProviderParam === 'railradar'
+      ? 'railradar'
+      : undefined;
+
+  const dataType = dataTypeParam === 'static' || dataTypeParam === 'live' || dataTypeParam === 'full'
+    ? dataTypeParam
+    : undefined;
 
   if (!number) {
     return NextResponse.json({ error: 'Train number required' }, { status: 400 });
   }
 
   try {
-    const trainData = await getTrainData(number);
+    const trainData = await getTrainData(number, {
+      journeyDate,
+      dataProvider,
+      dataType,
+    });
 
     // Filter schedule to only include halts (major stops)
     const majorStops = trainData.schedule.filter((s) => s.isHalt === 1);

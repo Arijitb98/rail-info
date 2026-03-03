@@ -4,10 +4,14 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import StationSearch from '@/components/StationSearch';
 import TrainSearch from '@/components/TrainSearch';
+import SiteHeader from '@/components/SiteHeader';
 
 type Station = {
   code: string;
   name: string;
+  nameHindi: string | null;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 export default function HomeContent() {
@@ -21,34 +25,15 @@ export default function HomeContent() {
     }
   };
 
+  const handleSwapStations = () => {
+    if (!fromStation && !toStation) return;
+    setFromStation(toStation);
+    setToStation(fromStation);
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
-      {/* Header */}
-      <header className="border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
-        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/25">
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-              </svg>
-            </div>
-            <span className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
-              Rail<span className="text-blue-600">Info</span>
-            </span>
-          </div>
-          <nav className="flex items-center gap-6 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-            <a href="#" className="transition-colors hover:text-zinc-900 dark:hover:text-zinc-100">
-              Search
-            </a>
-            <a href="#" className="transition-colors hover:text-zinc-900 dark:hover:text-zinc-100">
-              Live Map
-            </a>
-            <a href="/trains-between" className="transition-colors hover:text-zinc-900 dark:hover:text-zinc-100">
-              Routes
-            </a>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* Hero Section */}
       <main className="flex flex-1 flex-col">
@@ -141,17 +126,36 @@ export default function HomeContent() {
                   </p>
                 </div>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <StationSearch 
-                  label="From Station" 
-                  placeholder="Origin station..."
-                  onSelect={(station) => setFromStation(station)}
-                />
-                <StationSearch 
-                  label="To Station" 
-                  placeholder="Destination station..."
-                  onSelect={(station) => setToStation(station)}
-                />
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+                <div className="flex-1">
+                  <StationSearch 
+                    label="From Station" 
+                    placeholder="Origin station..."
+                    onSelect={(station) => setFromStation(station)}
+                    value={fromStation}
+                  />
+                </div>
+                <div className="flex justify-center sm:justify-center">
+                  <button
+                    type="button"
+                    onClick={handleSwapStations}
+                    disabled={!fromStation || !toStation}
+                    className="mt-2 flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-600 transition-all hover:border-zinc-300 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-600"
+                    aria-label="Swap stations"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="flex-1">
+                  <StationSearch 
+                    label="To Station" 
+                    placeholder="Destination station..."
+                    onSelect={(station) => setToStation(station)}
+                    value={toStation}
+                  />
+                </div>
               </div>
               <button
                 type="button"

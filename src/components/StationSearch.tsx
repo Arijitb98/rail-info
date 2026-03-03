@@ -16,9 +16,10 @@ type Props = {
   placeholder?: string;
   onSelect?: (station: Station) => void;
   navigateOnSelect?: boolean;
+  value?: Station | null;
 };
 
-export default function StationSearch({ label, placeholder = 'Search stations...', onSelect, navigateOnSelect = false }: Props) {
+export default function StationSearch({ label, placeholder = 'Search stations...', onSelect, navigateOnSelect = false, value }: Props) {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Station[]>([]);
@@ -27,6 +28,7 @@ export default function StationSearch({ label, placeholder = 'Search stations...
   const [selected, setSelected] = useState<Station | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const controlledValueCodeRef = useRef<string | null | undefined>(undefined);
 
   const search = useCallback(async (q: string) => {
     if (q.length < 2) {
@@ -62,6 +64,21 @@ export default function StationSearch({ label, placeholder = 'Search stations...
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (typeof value === 'undefined') return;
+    const nextCode = value?.code ?? null;
+    if (controlledValueCodeRef.current === nextCode) return;
+    controlledValueCodeRef.current = nextCode;
+
+    if (value) {
+      setSelected(value);
+      setQuery(`${value.code} - ${value.name}`);
+    } else {
+      setSelected(null);
+      setQuery('');
+    }
+  }, [value]);
 
   const handleSelect = (station: Station) => {
     setSelected(station);

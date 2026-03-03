@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -43,6 +43,14 @@ interface FullScheduleStop {
   isHalt: boolean;
 }
 
+interface TrainInstance {
+  startDate: string;
+  departureTimestamp?: number;
+  status?: string;
+  positionSummary?: string;
+  exceptionMessage?: string;
+}
+
 interface LiveData {
   journeyDate: string;
   lastUpdatedAt: string;
@@ -67,6 +75,10 @@ interface Metadata {
   lastLiveUpdate?: string;
 }
 
+type DataProvider = 'railradar' | 'NTES';
+
+const DATA_PROVIDERS: DataProvider[] = ['railradar', 'NTES'];
+
 // Helper to convert minutes from midnight to HH:MM format
 function minutesToTime(minutes: number): string {
   const hours = Math.floor(minutes / 60) % 24;
@@ -83,6 +95,19 @@ function formatDuration(minutes: number): string {
   return `${hours}h ${mins}m`;
 }
 
+function formatJourneyDateDisplay(date: string): string {
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) {
+    return date;
+  }
+  return parsed.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 export default function TrainDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -96,39 +121,121 @@ export default function TrainDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedStops, setExpandedStops] = useState<Set<number>>(new Set());
+  const [instances, setInstances] = useState<TrainInstance[]>([]);
+  const [instancesLoading, setInstancesLoading] = useState(true);
+  const [instancesError, setInstancesError] = useState<string | null>(null);
+  const [selectedJourneyDate, setSelectedJourneyDate] = useState<string>('');
+  const [activeJourneyDate, setActiveJourneyDate] = useState<string | null>(null);
+  const [dataProvider, setDataProvider] = useState<DataProvider>('railradar');
+  const isRefreshing = loading && !!train;
 
-  useEffect(() => {
-    if (!trainNumber) return;
+  const fetchTrain = useCallback(
+    async (journeyDateParam?: string | null) => {
+      if (!trainNumber) return;
 
-    const fetchTrain = async () => {
       setLoading(true);
       setError(null);
 
-      try {
-        const res = await fetch(`/api/trains/${encodeURIComponent(trainNumber)}`);
-        const data = await res.json();
+      let lastError: string | null = null;
 
-        if (!res.ok) {
-          setError(data.error || 'Failed to fetch train');
-          return;
+      try {
+        for (const provider of DATA_PROVIDERS) {
+          try {
+            const params = new URLSearchParams();
+            if (journeyDateParam) params.set('journeyDate', journeyDateParam);
+            params.set('dataProvider', provider);
+            const query = params.toString();
+
+            const res = await fetch(
+              `/api/trains/${encodeURIComponent(trainNumber)}${query ? `?${query}` : ''}`
+            );
+            const data = await res.json();
+
+            if (!res.ok) {
+              lastError = data.error || `Failed to fetch train via ${provider}`;
+              continue;
+            }
+
+            setTrain(data.train);
+            setSchedule(data.schedule || []);
+            setFullSchedule(data.fullSchedule || []);
+            setLiveData(data.liveData);
+            setMetadata(data.metadata);
+            setDataProvider(provider);
+
+            const resolvedJourneyDate = data.liveData?.journeyDate || journeyDateParam || null;
+            setActiveJourneyDate(resolvedJourneyDate);
+            return;
+          } catch (err) {
+            console.error(`Train fetch error (${provider}):`, err);
+            lastError = 'Network error';
+          }
         }
 
-        setTrain(data.train);
-        setSchedule(data.schedule || []);
-        setFullSchedule(data.fullSchedule || []);
-        setLiveData(data.liveData);
-        setMetadata(data.metadata);
-      } catch {
-        setError('Network error');
+        setError(lastError || 'Failed to fetch train');
       } finally {
         setLoading(false);
       }
-    };
+    },
+    [trainNumber]
+  );
 
+  useEffect(() => {
     fetchTrain();
-  }, [trainNumber]);
+  }, [fetchTrain]);
 
-  if (loading) {
+  const fetchInstances = useCallback(async () => {
+    if (!trainNumber) return;
+
+    setInstancesLoading(true);
+    setInstancesError(null);
+
+    let lastError: string | null = null;
+    const providersToTry = dataProvider
+      ? [dataProvider, ...DATA_PROVIDERS.filter(provider => provider !== dataProvider)]
+      : DATA_PROVIDERS;
+
+    try {
+      for (const provider of providersToTry) {
+        try {
+          const res = await fetch(
+            `/api/trains/${encodeURIComponent(trainNumber)}/instances?dataProvider=${provider}`
+          );
+          const data = await res.json();
+
+          if (!res.ok) {
+            lastError = data.error || `Failed to fetch journey dates via ${provider}`;
+            continue;
+          }
+
+          setInstances(Array.isArray(data.instances) ? data.instances : []);
+          return;
+        } catch (err) {
+          console.error(`Instances fetch error (${provider}):`, err);
+          lastError = 'Unable to load journey dates';
+        }
+      }
+
+      setInstances([]);
+      setInstancesError(lastError || 'Unable to load journey dates');
+    } finally {
+      setInstancesLoading(false);
+    }
+  }, [trainNumber, dataProvider]);
+
+  useEffect(() => {
+    fetchInstances();
+  }, [fetchInstances]);
+
+  const handleJourneyDateChange = useCallback(
+    (value: string) => {
+      setSelectedJourneyDate(value);
+      fetchTrain(value || undefined);
+    },
+    [fetchTrain]
+  );
+
+  if (loading && !train) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
         <div className="flex flex-col items-center gap-4">
@@ -276,9 +383,9 @@ export default function TrainDetailPage() {
             </div>
           </div>
 
-          {/* Live Status Banner */}
-          {liveData && (
-            <div className="mt-6 rounded-xl bg-green-50 p-4 dark:bg-green-900/20">
+          {/* Live Status & Journey Controls */}
+          <div className="mt-6 rounded-xl bg-green-50 p-4 dark:bg-green-900/20">
+            {liveData ? (
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-200 dark:bg-green-800">
                   <span className="text-lg">📍</span>
@@ -304,8 +411,61 @@ export default function TrainDetailPage() {
                   </div>
                 )}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="flex flex-col gap-1 text-sm text-green-800 dark:text-green-200">
+                <span className="font-medium">Live tracking is unavailable for this train right now.</span>
+                <span className="text-green-700/80 dark:text-green-200/80">
+                  Pick a past or upcoming journey date below to explore its detailed schedule.
+                </span>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-wrap gap-4">
+                <div className="flex min-w-[220px] flex-1 flex-col gap-1">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-green-800 dark:text-green-200">
+                    Journey Date
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedJourneyDate}
+                      onChange={(event) => handleJourneyDateChange(event.target.value)}
+                      className="flex-1 rounded-lg border border-green-200 bg-white px-3 py-2 text-sm text-green-900 shadow-sm focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-green-800 dark:bg-green-950/50 dark:text-green-100"
+                      disabled={instancesLoading && instances.length === 0}
+                    >
+                      <option value="">
+                        {activeJourneyDate
+                          ? `Auto • ${formatJourneyDateDisplay(activeJourneyDate)}`
+                          : 'Auto-detect latest'}
+                      </option>
+                      {instancesLoading && instances.length === 0 && (
+                        <option value="" disabled>
+                          Loading journey dates...
+                        </option>
+                      )}
+                      {instances.map((instance) => (
+                        <option
+                          key={`${instance.startDate}-${instance.departureTimestamp ?? instance.status ?? 'instance'}`}
+                          value={instance.startDate}
+                        >
+                          {formatJourneyDateDisplay(instance.startDate)}
+                          {instance.status ? ` • ${instance.status}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {isRefreshing && (
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">Refreshing…</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-green-700/80 dark:text-green-200/80">
+                    Showing data for {activeJourneyDate ? formatJourneyDateDisplay(activeJourneyDate) : 'latest available run'}
+                  </p>
+                </div>
+              </div>
+
+            {instancesError && (
+              <p className="mt-2 text-xs text-red-600 dark:text-red-400">{instancesError}</p>
+            )}
+          </div>
 
           {/* Quick Stats */}
           <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">

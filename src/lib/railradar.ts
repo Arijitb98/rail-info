@@ -1,5 +1,7 @@
 const API_BASE = 'https://api.railradar.org/api/v1';
 
+export type DataProvider = 'railradar' | 'NTES';
+
 function getApiKey(): string {
   const key = process.env.RAILRADAR_API_KEY;
   if (!key) {
@@ -154,6 +156,12 @@ export interface TrainData {
   liveData?: TrainLiveData;
 }
 
+export interface GetTrainDataOptions {
+  journeyDate?: string;
+  dataProvider?: DataProvider;
+  dataType?: 'full' | 'static' | 'live';
+}
+
 // Trains Between Types
 export interface TrainBetween {
   trainNumber: string;
@@ -184,6 +192,15 @@ export interface TrainBetween {
     day: number;
     distanceFromSourceKm: number;
   };
+}
+
+export interface TrainInstance {
+  startDate: string;
+  departureTimestamp?: number;
+  status?: string;
+  positionSummary?: string;
+  exceptionMessage?: string;
+  dataProvider?: DataProvider;
 }
 
 export interface TrainsBetweenData {
@@ -253,8 +270,16 @@ interface RawTrainApiResponse {
   liveData?: TrainLiveData;
 }
 
-export async function getTrainData(trainNumber: string): Promise<TrainData> {
-  const response = await fetchRailRadar<RawTrainApiResponse>(`/trains/${trainNumber}`);
+export async function getTrainData(trainNumber: string, options: GetTrainDataOptions = {}): Promise<TrainData> {
+  const params = new URLSearchParams();
+  if (options.journeyDate) params.set('journeyDate', options.journeyDate);
+  if (options.dataProvider) params.set('dataProvider', options.dataProvider);
+  if (options.dataType) params.set('dataType', options.dataType);
+
+  const queryString = params.toString();
+  const response = await fetchRailRadar<RawTrainApiResponse>(
+    `/trains/${trainNumber}${queryString ? `?${queryString}` : ''}`
+  );
   if (!response.success) {
     throw new Error(response.error?.message || 'Failed to fetch train data');
   }
@@ -280,6 +305,19 @@ export async function getTrainsBetween(fromCode: string, toCode: string): Promis
   );
   if (!response.success) {
     throw new Error(response.error?.message || 'Failed to fetch trains between stations');
+  }
+  return response.data;
+}
+
+export async function getTrainInstances(
+  trainNumber: string,
+  dataProvider: DataProvider = 'railradar'
+): Promise<TrainInstance[]> {
+  const response = await fetchRailRadar<TrainInstance[]>(
+    `/trains/${trainNumber}/instances?dataProvider=${dataProvider}`
+  );
+  if (!response.success) {
+    throw new Error(response.error?.message || 'Failed to fetch train instances');
   }
   return response.data;
 }
