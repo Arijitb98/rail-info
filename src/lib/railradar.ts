@@ -210,6 +210,27 @@ export interface TrainsBetweenData {
   trains: TrainBetween[];
 }
 
+// Live Train Map Types
+export interface LiveTrainMapData {
+  train_number: string;
+  train_name: string;
+  type: string;
+  mins_since_dep: number;
+  current_station: string;
+  current_station_name: string;
+  current_lat: number;
+  current_lng: number;
+  departure_minutes: number;
+  current_day: number;
+  next_station: string;
+  next_station_name: string;
+  next_lat: number;
+  next_lng: number;
+  next_arrival_minutes: number;
+  curr_distance: number;
+  next_distance: number;
+}
+
 async function fetchRailRadar<T>(endpoint: string): Promise<RailRadarResponse<T>> {
   const url = `${API_BASE}${endpoint}${endpoint.includes('?') ? '&' : '?'}apiKey=${getApiKey()}`;
   
@@ -318,6 +339,14 @@ export async function getTrainInstances(
   );
   if (!response.success) {
     throw new Error(response.error?.message || 'Failed to fetch train instances');
+  }
+  return response.data;
+}
+
+export async function getLiveTrainMap(): Promise<LiveTrainMapData[]> {
+  const response = await fetchRailRadar<LiveTrainMapData[]>('/trains/live-map');
+  if (!response.success) {
+    throw new Error(response.error?.message || 'Failed to fetch live train map data');
   }
   return response.data;
 }

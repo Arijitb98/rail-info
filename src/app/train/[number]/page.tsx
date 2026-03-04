@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import SiteHeader from '@/components/SiteHeader';
 
 interface Train {
   trainNumber: string;
@@ -325,30 +326,7 @@ export default function TrainDetailPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
-      {/* Header */}
-      <header className="border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
-        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/25">
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-              </svg>
-            </div>
-            <span className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
-              Rail<span className="text-blue-600">Info</span>
-            </span>
-          </Link>
-          <button
-            onClick={() => router.back()}
-            className="flex items-center gap-2 text-sm font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Back
-          </button>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
         {/* Train Header */}
@@ -391,16 +369,96 @@ export default function TrainDetailPage() {
                   <span className="text-lg">📍</span>
                 </div>
                 <div className="flex-1">
-                  <p className="font-medium text-green-800 dark:text-green-200">
-                    {liveData?.currentLocation?.status === 'AT_STATION' ? 'Currently at' : 'Departed from'}{' '}
-                    <span className="font-bold">{liveData?.currentLocation?.stationCode}</span>
-                  </p>
-                  <p className="text-sm text-green-600 dark:text-green-400">
-                    {Math.round(liveData?.currentLocation?.distanceFromOriginKm ?? 0)} km from origin
-                    {liveData?.lastUpdatedAt && (
-                      <> • Updated {new Date(liveData.lastUpdatedAt).toLocaleTimeString()}</>
-                    )}
-                  </p>
+                  {(() => {
+                    const curr = liveData.currentLocation;
+                    const currCode = curr?.stationCode;
+                    const currDistance = curr?.distanceFromOriginKm ?? 0;
+                    const status = curr?.status;
+
+                    // Resolve station name from schedule or fullSchedule
+                    const haltMatch = schedule.find(s => s.stationCode === currCode);
+                    const fullMatch = fullSchedule.find(s => s.stationCode === currCode);
+                    const stationName = haltMatch?.stationName || fullMatch?.stationName || currCode;
+                    const isIntermediate = !!fullMatch && !fullMatch.isHalt;
+
+                    // Determine label
+                    let label = 'Departed from';
+                    if (status === 'AT_STATION') label = 'Currently at';
+                    else if (isIntermediate) label = 'Crossed';
+
+                    // Determine next stop: find the first upcoming station.
+                    // Loop through schedule in order, skip passed/current stations.
+                    let nextStop: ScheduleStop | null = null;
+                    for (let i = 0; i < schedule.length; i++) {
+                      const s = schedule[i];
+                      const sDist = s.distanceKm ?? 0;
+                      // If this is the current station, next is the one after
+                      if (s.stationCode === currCode) {
+                        nextStop = schedule[i + 1] ?? null;
+                        break;
+                      }
+                      // Otherwise pick the first station with distance strictly greater than current position
+                      if (sDist > currDistance) {
+                        nextStop = s;
+                        break;
+                      }
+                    }
+
+                    const nextLiveInfo = nextStop ? liveData.route.find(r => r.stationCode === nextStop.stationCode) : null;
+                    const scheduledMinutes = nextStop ? (nextStop.arrivalMinutes ?? nextStop.departureMinutes ?? null) : null;
+                    const delayMinutes = nextLiveInfo ? (nextLiveInfo.delayArrivalMinutes ?? nextLiveInfo.delayDepartureMinutes ?? 0) : 0;
+                    const expectedMinutes = scheduledMinutes !== null ? scheduledMinutes + (delayMinutes ?? 0) : null;
+                    const delayClass = delayMinutes > 0 ? 'text-red-600 dark:text-red-400' : delayMinutes < 0 ? 'text-green-600 dark:text-green-300' : 'text-zinc-600 dark:text-zinc-400';
+
+                    return (
+                      <>
+                        <p className="font-medium text-green-800 dark:text-green-200">
+                          {label} <span className="font-bold">{stationName} ({currCode})</span>
+                        </p>
+                        <p className="text-sm text-green-600 dark:text-green-400">
+                          {Math.round(currDistance)} km from origin
+                          {liveData.lastUpdatedAt && (
+                            <> • Updated {new Date(liveData.lastUpdatedAt).toLocaleTimeString()}</>
+                          )}
+                        </p>
+
+                        {nextStop && scheduledMinutes !== null && (
+                          <div className="mt-2 rounded-md bg-white/60 p-2 text-sm text-zinc-700 dark:bg-zinc-900/30 dark:text-zinc-200">
+                            <div className="font-medium">Next: {nextStop.stationName} <span className="text-xs text-zinc-500">({nextStop.stationCode})</span></div>
+                            <div className="text-xs">
+                              <span className="text-zinc-600 dark:text-zinc-400">Scheduled: </span>
+                              <span className="font-mono">{minutesToTime(scheduledMinutes)}</span>
+                              <span className="mx-2 text-zinc-400">•</span>
+                              <span className={`${delayClass} font-mono`}>Expected: {expectedMinutes !== null ? minutesToTime(expectedMinutes) : '—'}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Action buttons */}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Link
+                            href={`/live-map?train=${train.trainNumber}`}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                            </svg>
+                            View on Map
+                          </Link>
+                          <button
+                            onClick={() => fetchTrain(selectedJourneyDate || undefined)}
+                            disabled={loading}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-green-700 disabled:opacity-50"
+                          >
+                            <svg className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            {loading ? 'Refreshing…' : 'Refresh'}
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
                 {liveData?.journeyDate && (
                   <div className="text-right text-sm">
@@ -689,15 +747,26 @@ export default function TrainDetailPage() {
                         {intermediateStations.map((intStop, intIdx) => {
                           const intStopDistance = intStop.distanceKm ?? 0;
                           const currentDistance = liveData?.currentLocation?.distanceFromOriginKm ?? 0;
-                          const isIntPassed = intStopDistance <= currentDistance;
+                          const liveStatus = liveData?.currentLocation?.status;
+                          // Only mark as passed if train has actually crossed this station
+                          // AT_STATION: train is at a station, so intermediate is passed only if strictly less than current distance
+                          // DEPARTED: train has left a station, passed if distance is less than or equal
+                          let isIntPassed = false;
+                          if (liveData?.currentLocation) {
+                            if (liveStatus === 'AT_STATION') {
+                              isIntPassed = intStopDistance < currentDistance;
+                            } else {
+                              isIntPassed = intStopDistance < currentDistance;
+                            }
+                          }
                           
                           return (
                             <div key={`int-${intStop.stationCode}-${intIdx}`} className="relative flex items-stretch gap-4">
                               {/* Timeline */}
                               <div className="flex flex-col items-center">
-                                <div className={`flex-1 w-0.5 ${isIntPassed || isPassed ? 'bg-green-400 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
-                                <div className={`h-2 w-2 flex-shrink-0 rounded-full ${isIntPassed || isPassed ? 'bg-green-300 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
-                                <div className={`flex-1 w-0.5 ${isIntPassed || isPassed ? 'bg-green-400 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
+                                <div className={`flex-1 w-0.5 ${isIntPassed ? 'bg-green-400 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
+                                <div className={`h-2 w-2 flex-shrink-0 rounded-full ${isIntPassed ? 'bg-green-300 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
+                                <div className={`flex-1 w-0.5 ${isIntPassed ? 'bg-green-400 dark:bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
                               </div>
 
                               {/* Station Info */}

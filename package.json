@@ -12,6 +12,7 @@
     "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^7.3.0",
     "ioredis": "^5.9.2",
+    "leaflet": "^1.9.4",
     "next": "16.1.6",
     "node-fetch": "^2.7.0",
     "pg": "^8.18.0",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^20",
     "@types/node-fetch": "^2.6.13",
     "@types/pg": "^8.16.0",
