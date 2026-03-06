@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import SiteHeader from "@/components/SiteHeader";
 import Link from "next/link";
@@ -95,6 +95,18 @@ function minutesToTime(minutes: number): string {
 }
 
 export default function LiveMapPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
+      </div>
+    }>
+      <LiveMapContent />
+    </Suspense>
+  );
+}
+
+function LiveMapContent() {
   const searchParams = useSearchParams();
   const trainParam = searchParams.get("train") || "";
 
