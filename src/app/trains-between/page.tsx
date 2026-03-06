@@ -154,10 +154,26 @@ function TrainsBetweenContent() {
   }, [data]);
 
   const sortedTrains = useMemo(() => {
-    if (sortOption === 'default') return trainsWithMetrics;
     const list = [...trainsWithMetrics];
+    
+    // Get current time in minutes since midnight for relative sorting
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    
+    // Calculate time relative to current time (wraps around midnight)
+    const getRelativeTime = (absMinutes: number | null): number => {
+      if (absMinutes === null) return Infinity;
+      // Convert absolute minutes (which may include day offset) to just time of day
+      const timeOfDay = absMinutes % (24 * 60);
+      // If time is before current time, treat it as next day (add 24 hours)
+      return timeOfDay >= currentMinutes ? timeOfDay - currentMinutes : (1440 - currentMinutes) + timeOfDay;
+    };
 
     switch (sortOption) {
+      case 'default':
+        // Sort by departure time relative to current time
+        list.sort((a, b) => getRelativeTime(a.departureAbsMinutes) - getRelativeTime(b.departureAbsMinutes));
+        break;
       case 'shortest-duration':
         list.sort((a, b) => (a.legDurationMinutes ?? Infinity) - (b.legDurationMinutes ?? Infinity));
         break;
