@@ -15,7 +15,16 @@ function getPgPool(): Pool {
     throw new Error('DATABASE_URL is not set. Check your .env file.');
   }
 
-  const pool = new Pool({ connectionString });
+  // Configure SSL for production with CA certificate
+  let ssl: Pool['options']['ssl'] = undefined;
+  if (process.env.NODE_ENV === 'production') {
+    const caCert = process.env.DATABASE_CA_CERT;
+    ssl = caCert
+      ? { rejectUnauthorized: true, ca: caCert }
+      : { rejectUnauthorized: false };
+  }
+
+  const pool = new Pool({ connectionString, ssl });
   if (process.env.NODE_ENV !== 'production') globalThis.__pgPool = pool;
   return pool;
 }
