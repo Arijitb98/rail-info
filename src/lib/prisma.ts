@@ -18,7 +18,11 @@ function getPgPool(): Pool {
   // Configure SSL for production with CA certificate
   let ssl: Pool['options']['ssl'] = undefined;
   if (process.env.NODE_ENV === 'production') {
-    const caCert = process.env.DATABASE_CA_CERT;
+    let caCert = process.env.DATABASE_CA_CERT;
+    // Handle escaped newlines from environment variables (common in deployment platforms)
+    if (caCert) {
+      caCert = caCert.replace(/\\n/g, '\n');
+    }
     ssl = caCert
       ? { rejectUnauthorized: true, ca: caCert }
       : { rejectUnauthorized: false };
