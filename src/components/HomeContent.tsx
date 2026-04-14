@@ -173,7 +173,7 @@ export default function HomeContent() {
                 { label: 'Stations', value: '10,000+', icon: '🚉' },
                 { label: 'Trains', value: '15,000+', icon: '🚂' },
                 { label: 'Routes', value: '65,000+', icon: '🛤️' },
-                { label: 'Daily Updates', value: '24/7', icon: '⏱️' },
+                { label: 'Daily Updated', value: '24/7', icon: '⏱️' },
               ].map((stat) => (
                 <div
                   key={stat.label}

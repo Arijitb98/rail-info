@@ -1,6 +1,7 @@
 import { PrismaClient } from '@/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
+import { readFileSync } from 'fs';
 
 declare global {
   var __prisma: PrismaClient | undefined;
@@ -14,18 +15,32 @@ function getPgPool(): Pool {
   if (!connectionString) {
     throw new Error('DATABASE_URL is not set. Check your .env file.');
   }
-
-  // Configure SSL for production with CA certificate
+  // Configure SSL: enable when connection string requests SSL or in production.
+  // This also supports providing a CA via `DATABASE_CA_CERT` (handles escaped newlines).
   let ssl: Pool['options']['ssl'] = undefined;
-  if (process.env.NODE_ENV === 'production') {
+  const wantsSsl = /sslmode=require|ssl=true/i.test(connectionString);
+  if (wantsSsl || process.env.NODE_ENV === 'production') {
     let caCert = process.env.DATABASE_CA_CERT;
-    // Handle escaped newlines from environment variables (common in deployment platforms)
+    const caPath = process.env.DATABASE_CA_CERT_PATH;
+
+    // If a path is provided, prefer reading the cert from disk (useful for mounts/secrets).
+    if (!caCert && caPath) {
+      try {
+        caCert = readFileSync(caPath, 'utf8');
+      } catch (err) {
+        // Log and continue; we'll fall back to insecure if no cert is available.
+        // Avoid throwing here to keep local dev flows simple.
+        // eslint-disable-next-line no-console
+        console.warn(`Failed to read DATABASE_CA_CERT_PATH at ${caPath}:`, err);
+      }
+    }
+
     if (caCert) {
+      // Support escaped newlines in env var values
       caCert = caCert.replace(/\\n/g, '\n');
     }
-    ssl = caCert
-      ? { rejectUnauthorized: true, ca: caCert }
-      : { rejectUnauthorized: false };
+
+    ssl = caCert ? { rejectUnauthorized: true, ca: caCert } : { rejectUnauthorized: false };
   }
 
   const pool = new Pool({ connectionString, ssl });
