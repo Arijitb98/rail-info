@@ -1,7 +1,6 @@
 import { PrismaClient } from '../generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
-import { readFileSync } from 'fs';
 
 declare global {
   var __prisma: PrismaClient | undefined;
@@ -31,7 +30,12 @@ function getPgPool(): Pool {
     // If a path is provided, prefer reading the cert from disk (useful for mounts/secrets).
     if (!caCert && caPath) {
       try {
-        caCert = readFileSync(caPath, 'utf8');
+        // Lazy-load `fs` at runtime to avoid bundling Node built-ins into
+        // Edge runtimes (which don't support `fs`). Using `require` here
+        // prevents static bundlers from including `fs` in ESM/Edge builds.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const fs = require('fs') as typeof import('fs');
+        caCert = fs.readFileSync(caPath, 'utf8');
       } catch (err) {
         // Log and continue; we'll fall back to insecure if no cert is available.
         // Avoid throwing here to keep local dev flows simple.
