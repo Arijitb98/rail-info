@@ -46,7 +46,7 @@ async function main() {
   let stationSql = '-- Generated Stations INSERTs\n\n';
   for (const chunk of stationChunks) {
     const values = chunk
-      .map(([code, name]) => `(${escapeSqlString(code)}, ${escapeSqlString(name)}, NULL, NULL)`)
+      .map(([code, name]) => `(${escapeSqlString(code)}, ${escapeSqlString(name)}, NULL, NULL, NULL)`)
       .join(',\n');
     stationSql += `INSERT INTO "Station" ("code","name","nameHindi","latitude","longitude") VALUES\n${values}\nON CONFLICT ("code") DO NOTHING;\n\n`;
   }

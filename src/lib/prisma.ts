@@ -15,11 +15,16 @@ function getPgPool(): Pool {
   if (!connectionString) {
     throw new Error('DATABASE_URL is not set. Check your .env file.');
   }
-  // Configure SSL: enable when connection string requests SSL or in production.
-  // This also supports providing a CA via `DATABASE_CA_CERT` (handles escaped newlines).
+  // Configure SSL:
+  // - Allow explicit opt-out via `DISABLE_DB_SSL=true`.
+  // - Treat Supabase hosts as non-SSL by default to avoid certificate issues.
+  const disableSslEnv = String(process.env.DISABLE_DB_SSL || '').toLowerCase() === 'true';
+  const isSupabaseHost = /supabase\.co/i.test(connectionString);
+
   let ssl: Pool['options']['ssl'] = undefined;
   const wantsSsl = /sslmode=require|ssl=true/i.test(connectionString);
-  if (wantsSsl || process.env.NODE_ENV === 'production') {
+
+  if (!disableSslEnv && !isSupabaseHost && (wantsSsl || process.env.NODE_ENV === 'production')) {
     let caCert = process.env.DATABASE_CA_CERT;
     const caPath = process.env.DATABASE_CA_CERT_PATH;
 
@@ -41,6 +46,13 @@ function getPgPool(): Pool {
     }
 
     ssl = caCert ? { rejectUnauthorized: true, ca: caCert } : { rejectUnauthorized: false };
+  } else if (disableSslEnv || isSupabaseHost) {
+    // Explicitly disable SSL on Supabase or when opted out via env var.
+    ssl = undefined;
+    if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.info('Database SSL disabled (DISABLE_DB_SSL=true or Supabase host detected).');
+    }
   }
 
   const pool = new Pool({ connectionString, ssl });
