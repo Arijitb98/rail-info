@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTrainsBetween } from '@/lib/railradar';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 // Helper to convert minutes from midnight to HH:MM format
 function minutesToTime(minutes: number): string {
   const hours = Math.floor(minutes / 60) % 24;

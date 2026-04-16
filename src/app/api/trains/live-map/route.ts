@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getLiveTrainMap, LiveTrainMapData } from '@/lib/railradar';
 
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const revalidate = 30; // Revalidate every 30 seconds
 
 export async function GET() {
   try {
