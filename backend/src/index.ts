@@ -2,6 +2,8 @@ import 'dotenv/config';
 import cron from 'node-cron';
 import { getPrisma, disconnect } from './lib/db.js';
 import { log, logError } from './lib/utils.js';
+import { run as runScheduleScrape } from './jobs/scrape-schedules.js';
+import { run as runStationScrape } from './jobs/scrape-stations.js';
 
 log('Backend', 'Rail-Info backend service starting...');
 
@@ -23,6 +25,11 @@ async function healthCheck(): Promise<void> {
 async function main(): Promise<void> {
   await healthCheck();
 
+  // Warn if RAILRADAR_API_KEY is missing — all RailRadar calls will fail
+  if (!process.env.RAILRADAR_API_KEY) {
+    logError('Backend', 'RAILRADAR_API_KEY is not set — RailRadar provider will be unavailable, falling back to NTES only');
+  }
+
   // ─── Cron Jobs ──────────────────────────────────────────────────
   // Schedule scraping: every 6 hours by default
   const scheduleInterval = process.env.SCHEDULE_SCRAPE_INTERVAL || '360';
@@ -31,8 +38,7 @@ async function main(): Promise<void> {
   cron.schedule(scheduleCron, async () => {
     log('Cron', 'Starting schedule scrape job...');
     try {
-      // Dynamic import to run in isolation
-      await import('./jobs/scrape-schedules.js');
+      await runScheduleScrape();
     } catch (err) {
       logError('Cron', 'Schedule scrape job failed', err);
     }
@@ -44,7 +50,7 @@ async function main(): Promise<void> {
   cron.schedule('0 3 * * *', async () => {
     log('Cron', 'Starting station scrape job...');
     try {
-      await import('./jobs/scrape-stations.js');
+      await runStationScrape();
     } catch (err) {
       logError('Cron', 'Station scrape job failed', err);
     }

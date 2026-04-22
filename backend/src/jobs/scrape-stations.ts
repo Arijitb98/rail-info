@@ -14,10 +14,17 @@ const DELAY_BETWEEN_MS = 200;
  *
  * Usage: npx tsx src/jobs/scrape-stations.ts [--limit 100]
  */
-async function main() {
-  const args = process.argv.slice(2);
-  const limitIdx = args.indexOf('--limit');
-  const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1]) : undefined;
+export async function run(options?: { limit?: number }) {
+  const limit = options?.limit;
+  return _run(limit);
+}
+
+async function _run(limitOverride?: number) {
+  const limit = limitOverride ?? (() => {
+    const args = process.argv.slice(2);
+    const limitIdx = args.indexOf('--limit');
+    return limitIdx !== -1 ? parseInt(args[limitIdx + 1]) : undefined;
+  })();
 
   const prisma = getPrisma();
   const chain = new ProviderChain([railradarProvider]);
@@ -74,10 +81,13 @@ async function main() {
   await Promise.all(tasks);
 
   log('ScrapeStations', `Done: ${succeeded} succeeded, ${failed} failed out of ${stations.length}`);
-  await disconnect();
 }
 
-main().catch((err) => {
-  logError('ScrapeStations', 'Fatal error', err);
-  process.exit(1);
-});
+// Allow running as standalone CLI script
+const isMainModule = process.argv[1]?.includes('scrape-stations');
+if (isMainModule) {
+  _run().then(() => disconnect()).catch((err) => {
+    logError('ScrapeStations', 'Fatal error', err);
+    process.exit(1);
+  });
+}

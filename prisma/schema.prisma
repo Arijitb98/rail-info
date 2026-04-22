@@ -43,7 +43,7 @@ model Schedule {
   arrivalTime  String?
   departureTime String?
   day          Int?
-  distance     Int?
+  distance     Float?
   stopNumber   Int?
 }
 
